@@ -72,8 +72,6 @@ class BlockChain:
             return computed_hash
  
     def isProofValid(self, block, blockHash):
-            # print(blockHash)
-            # print(computeHash(block))
             return (blockHash.startswith('0' * self.difficulty) and
                     blockHash == computeHash(block))
 
