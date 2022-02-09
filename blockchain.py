@@ -32,7 +32,6 @@ class BlockChain:
         self.chainOfTx = []
         self.branches = []
         self.forkBlockIndex = 0
-        self.numTrials = 0
         self.difficulty = 4
 
         self.createGenesisBlock()
@@ -72,6 +71,8 @@ class BlockChain:
             return computed_hash
  
     def isProofValid(self, block, blockHash):
+            # print(blockHash)
+            # print(computeHash(block))
             return (blockHash.startswith('0' * self.difficulty) and
                     blockHash == computeHash(block))
 
@@ -82,7 +83,39 @@ class BlockChain:
         hash = computeHash(lastBlock)
         index = lastBlock.index
 
+        
+        # # creates the new branch in case of attacker
+        # for dictionary in self.chainOfTx:
+        #     if(computeHash(dictionary) == block.prevHash and dictionary.index <= index):
+        #         if not self.isProofValid(block, proof):
+        #              return False
+        #         self.forkBlockIndex = dictionary.index
+        #         block.nonce = proof
+        #         self.branches.append(block)
+                
+                
+
+        # print(hash)
+        # print(block.prevHash)
         if hash != block.prevHash:
+            # creates the new branch in case of attacker
+            if len(self.branches) == 0:
+                for dictionary in self.chainOfTx:
+                    if(computeHash(dictionary) == block.prevHash and dictionary.index <= index):
+                        if not self.isProofValid(block, proof):
+                            return False
+                        self.forkBlockIndex = dictionary.index
+                        block.nonce = proof
+                        self.branches.append(block)
+                        return True
+            else: 
+                # adds to branch
+                if len(self.branches) != 0:
+                    # print(self.branches)
+                    if computeHash(self.branches[-1]) == block.prevHash:
+                        self.branches.append(block)
+                        return True
+                            
             return False
         if not self.isProofValid(block, proof):
             return False
@@ -113,6 +146,28 @@ class BlockChain:
             self.addBlock(newBlock, proof)
             self.pendingTx = []
             return newBlock
+    def attackerMine(self, attackTrial):
+            # print('here?')
+            if not self.pendingTx:
+                return False
+            if attackTrial == 0:
+
+                index = -2
+                lastBlock = self.getBlock(index)
+            else:
+                lastBlock = self.branches[-1]
+
+            transactions = lastBlock.transactions + self.pendingTx
+            newBlock = Block(index=lastBlock.index + 1,
+                            tx=transactions,
+                            timestamp=time.time(),
+                            prevHash=computeHash(lastBlock))
+                        
+    
+            proof = self.proofOfWork(newBlock)
+            self.addBlock(newBlock, proof)
+            self.pendingTx = []
+            return newBlock
 
 class User:
     def __init__(self, number):
@@ -133,7 +188,7 @@ def write_to_text_file(data):
             f.write(str(item.__dict__))
             f.write('\n')
 
-def controlGUI(user):
+def controlDifficulty(user):
     history = []
 
     for it in range(0,10):
@@ -209,7 +264,8 @@ def controlGUI(user):
 print('---- BLOCK CHAIN ----')
 user = User(0)
 print('Finding suitable N')
-difficulty = controlGUI(user)
+print('This may take a while')
+# difficulty = controlDifficulty(user)
 
 
 users = []
@@ -220,8 +276,8 @@ for i in range(numUsers):
     users.append(user)
 print('Number of users is ' , numUsers)
 
-numTurns = randint(5,50)
-print('Normal transaction simulation: ')
+numTurns = randint(5,20)
+print('--------------Normal Transaction Simulation-----------')
 # Transaction simulation
 for i in range(numTurns):
     winner = np.random.choice( np.arange (len(users)))
@@ -230,25 +286,21 @@ for i in range(numTurns):
     newBlock = users[winner].blockChain.mine()
     time2 = time.time()
     totalMiningTime = totalMiningTime + time2 - time1
+    print('User' , winner, "mined a new block")
     # print('Block mined in ' + str(time2 - time1))
     broadcastTransaction(users, users[winner], newBlock)
 
 write_to_text_file(users[0].blockChain.chainOfTx)
 
-print('Resulted blockchain: ')
+print('--------------------Resulted Blockchain--------------------')
 for block in users[0].blockChain.chainOfTx:
     print(block.__dict__)
-
-
-
+print('--------------------------------------------------------')
 # Attack Simulation!
-print('attack simulation: ')
-users = []
-for i in range(numUsers):
-    user = User(i)
-    users.append(user)
+print('--------------------Attack Simulation--------------------')
 # print(users)
 
+# assume we already have a block chain, now an attacker will attack!
 # assume computational power is 100
 
 attackerComputationalPower = randint(20, 100)
@@ -258,17 +310,18 @@ normalMiningTime = 0
 nodeUserNumber = 0
 attackerTurns = 0
 nodeTurns = 0
-
 for i in range(numTurns):
     if(randint(0,100) <= attackerComputationalPower):
         #attacker's turn
         time1 = time.time()
         users[attackerUserNumber].blockChain.appendTx('Transaction' + str(attackerUserNumber))
-        users[attackerUserNumber].blockChain.mine()
+        users[attackerUserNumber].blockChain.attackerMine(attackerTurns)
         time2 = time.time()
+        print("Attacker mined a new block")
         # print('Block mined in ' + str(time2 - time1))
         attackerMiningTime = attackerMiningTime + time2 - time1
         attackerTurns = attackerTurns + 1
+        broadcastTransaction(users, users[attackerUserNumber], newBlock)
     else:
         #normal node's turn
         time1 = time.time()
@@ -276,6 +329,7 @@ for i in range(numTurns):
         users[nodeUserNumber].blockChain.mine()
         time2 = time.time()
         normalMiningTime = normalMiningTime + time2 - time1
+        print('User' , nodeUserNumber, "mined a new block")
         #mine in normal chain
         nodeTurns = nodeTurns + 1
         nodeUserNumber = nodeUserNumber + 1
@@ -283,16 +337,35 @@ for i in range(numTurns):
             nodeUserNumber = nodeUserNumber + 1
         if nodeUserNumber == numUsers:
             nodeUserNumber = 0
+        broadcastTransaction(users, users[nodeUserNumber], newBlock)
 #see who wins.
 if(attackerTurns > nodeTurns):
     print('Attacker wins')
     #relative speed is number of turns?
 else:
     print('Attacker loses')
-
 print('total mining time in normal simulation is: ' + str(totalMiningTime * int(numUsers / 2)))
 # print('Total nodes mining time in attack simulation is: ' + str(normalMiningTime * int(numUsers / 2)))
-print('Attacker time is: ' + str(attackerMiningTime))
+print('Attacker time in attack simulation is: ' + str(attackerMiningTime))
 
 
+
+# @app.route('/chain', methods=['GET'])
+# def get_chain():
+#     chain_data = []
+#     for block in blockchain.chainOfTx:
+#         chain_data.append(block.__dict__)
+#     return json.dumps({"length": len(chain_data),
+#                        "chain": chain_data})
+
+# @app.route('/mine_block', methods=['GET'])
+# def mine_block():
+#     newBlockIndex = blockchain.mine()
+
+#     newBlock = blockchain.chainOfTx[newBlockIndex]
+#     print(newBlock)
+
+#     print(blockchain.chainOfTx)
+#     return json.dumps(newBlock.__dict__)
+# app.run(debug=True, port=5000)
 
